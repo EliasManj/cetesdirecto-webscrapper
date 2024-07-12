@@ -1,0 +1,5 @@
+beautifulsoup4
+requests
+selenium
+python-dotenv
+pytest-playwright
