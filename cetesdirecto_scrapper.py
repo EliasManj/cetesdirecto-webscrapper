@@ -33,33 +33,36 @@ class CDScrapper:
             geolocation={"latitude": real_latitude, "longitude": real_longitude},
         )
         self.page = await self.context.new_page()
+        await asyncio.sleep(1)
 
     async def login(self, timeout=50000):
         await self.page.goto(
             f"{self.url}/{LOGIN_URI}", wait_until="networkidle", timeout=timeout
         )
-        await self.page.fill("#userId", self.usr)
+        await self.page.wait_for_load_state("networkidle")
         await asyncio.sleep(1)
+        await self.page.fill("#userId", self.usr)
         await self.page.click("#continuarBtn")
         await asyncio.sleep(1)
         await self.page.wait_for_load_state("networkidle")
 
         await self.page.fill("#pwdId", self.pwd)
-        await asyncio.sleep(1)
         await self.page.click("#accederBtn")
+        await asyncio.sleep(5)
         await self.page.wait_for_load_state("networkidle")
+        await self.page.wait_for_selector("[data-name='portafolioMenu']")
 
     async def logout(self, timeout=50000):
         await self.page.goto(
             f"{self.url}/{INIT_URI}", wait_until="networkidle", timeout=timeout
         )
-        await self.page.wait_for_selector("[data-name='cerrarSesion']")
+        await self.page.wait_for_selector("[data-name='portafolioMenu']")
         await self.page.click("[data-name='cerrarSesion']")
         await self.page.wait_for_load_state("networkidle")
 
     async def fetch_portafolio(self, timeout=50000):
-        await self.page.wait_for_selector(".portafolioMenu", timeout=timeout)
-        await self.page.click(".portafolioMenu")
+        await self.page.wait_for_selector("#portafolioMenu", timeout=timeout)
+        await self.page.click("#portafolioMenu")
         await asyncio.sleep(1)
         await self.page.wait_for_load_state("networkidle")
 
@@ -75,14 +78,48 @@ class CDScrapper:
             return None
 
         soup = BeautifulSoup(portafolio_html, "html.parser")
-        instrumentos_div = soup.find("div", class_="instrumentos")
-        instrumentos = self.parse_instrumentos(instrumentos_div)
+        instrumentos = await self.parse_instrumentos(soup)
+        total = await self.parse_total_instrumentos(soup)
+        instrumentos.append(total)
         return instrumentos
 
-    async def parse_instrumentos(self, soup):
-        instrumentos = []
+    async def parse_total_instrumentos(self, soup):
+        cols = []
+        totalInstrumentos = soup.find("div", class_="totalInstrumentos")
+        if totalInstrumentos:
+            percentInstrumento = totalInstrumentos.find(
+                "span", class_="percentInstrumento"
+            )
+            if percentInstrumento:
+                tasa = percentInstrumento.get_test(strip=True)
+            for column in totalInstrumentos.find_all(
+                "div", class_="totalInstrumentosSpaceDesk"
+            ):
+                text = column.get_text(strip=True)
+                cols.append(text)
+        totalInstrumentosNumeros = totalInstrumentos.find(
+            "div", class_="totalInstrumentosNumeros"
+        )
+        if totalInstrumentosNumeros:
+            txtInstrumento = totalInstrumentosNumeros.find(
+                "span", class_="txtInstrumento"
+            )
+            if txtInstrumento:
+                montoValuado = txtInstrumento.get_text(strip=True)
+        return {
+            "instrumento": "total",
+            "tasa": tasa,
+            "montoInv": cols[0],
+            "plusMinus": cols[1],
+            "montoDisp": cols[2],
+            "montoValuado": montoValuado,
+        }
 
-        for instrumento in soup.find_all("div", class_="instrumento"):
+    async def parse_instrumentos(self, soup):
+        instrumentos = soup.find("div", class_="instrumentos")
+        rows = []
+
+        for instrumento in instrumentos.find_all("div", class_="instrumento"):
             name = rate = montoInv = plusMinus = montoDisp = None
 
             nombreInstrumento = instrumento.find("div", class_="nombreInstrumento")
@@ -134,15 +171,14 @@ class CDScrapper:
                     if totalInstrumento:
                         montoValuado = totalInstrumento.get_text(strip=True)
 
-            instrumentos.append(
+            rows.append(
                 {
-                    "name": name,
-                    "rate": rate,
+                    "instrumento": name,
+                    "tasa": rate,
                     "montoInv": montoInv,
                     "plusMinus": plusMinus,
                     "montoDisp": montoDisp,
                     "montoValuado": montoValuado,
                 }
             )
-
-        return instrumentos
+        return rows

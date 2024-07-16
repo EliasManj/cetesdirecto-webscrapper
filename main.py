@@ -16,7 +16,7 @@ async def main():
     scrapper = CDScrapper(url, user, pwd)
     async with async_playwright() as p:
         await scrapper.init_browser(p)
-        await scrapper.login()
+        await scrapper.login(timeout=10000)
         portfolio = await scrapper.fetch_portafolio()
         print(portfolio)
         await scrapper.logout()
